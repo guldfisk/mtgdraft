@@ -5,6 +5,7 @@ import typing as t
 import threading
 
 import multiprocessing as ms
+import uuid
 from queue import Queue, Empty
 
 from magiccube.collections import cubeable
@@ -22,9 +23,13 @@ from yeetlong.multiset import Multiset
 
 class Drafter(object):
 
-    def __init__(self, name: str, key: str):
+    def __init__(self, name: str, key: uuid.UUID):
         self._name = name
         self._key = key
+
+    @property
+    def key(self) -> uuid.UUID:
+        return self._key
 
     def __eq__(self, other) -> bool:
         return (
@@ -101,6 +106,7 @@ class DraftInterface(object):
 
         self._booster_queue = Queue()
         self._pick_queue = Queue()
+        self._in_queue = Queue()
         self._out_queue = Queue()
 
         self._current_booster_lock = threading.Lock()
@@ -115,17 +121,17 @@ class DraftInterface(object):
     def booster_queue(self) -> Queue[Booster]:
         return self._booster_queue
 
-    @property
-    def in_queue(self):
-        return self._pick_queue
+    # @property
+    # def in_queue(self):
+    #     return self._pick_queue
 
     @property
     def out_queue(self):
         return self._out_queue
 
-    def receive_message(self, message: t.Any) -> None:
-        with self._current_booster_lock:
-            self._receive_message(message)
+    # def receive_message(self, message: t.Any) -> None:
+    #     with self._current_booster_lock:
+    #         self._receive_message(message)
 
     def _receive_message(self, message: t.Any) -> None:
         message_type = message.get('type')
@@ -161,9 +167,11 @@ class DraftInterface(object):
                 #TODO error
                 return
 
-            if self._current_booster is None or not pick in self._current_booster:
-                #TODO error
-                return
+            self._pick_queue.put(pick)
+
+            # if self._current_booster is None or not pick in self._current_booster:
+            #     #TODO error
+            #     return
 
             # self._current_booster.cubeables.remove(pick, 1)
             # #TODO put pick in pool
@@ -176,12 +184,21 @@ class DraftInterface(object):
         else:
             pass
 
-    def run(self):
+    def run(self) -> None:
         self._communicator.start()
         self._booster_pusher.start()
 
+    def stop(self) -> None:
+        self._terminating.set()
+
     def _connection_loop(self) -> None:
-        pass
+        while not self._terminating.is_set():
+            try:
+                message = self._in_queue.get(timeout = 2)
+                with self._current_booster_lock:
+                    self._receive_message(message)
+            except Empty:
+                pass
 
     def _booster_loop(self) -> None:
         while not self._terminating.is_set():
@@ -211,15 +228,16 @@ class DraftInterface(object):
                 self._current_booster = None
 
 
-
-
 class Draft(object):
 
     def __init__(
         self,
+        key: uuid.UUID,
         drafters: Ring[Drafter],
         cube: Cube,
     ):
+        self._key = key
+
         self._drafters = drafters
         self._cube = cube
 
@@ -244,6 +262,14 @@ class Draft(object):
             range(self._pack_amount)
         ]
 
+    @property
+    def drafters(self) -> t.Iterable[Drafter]:
+        return self._drafters.all
+
+    @property
+    def key(self) -> uuid.UUID:
+        return self._key
+
     def booster_empty(self, booster: Booster) -> None:
         pass
 
@@ -254,6 +280,9 @@ class Draft(object):
         amount_packs = amount_cards_per_player // pack_size
         amount_packs -= max(((amount_packs * pack_size) - cube_size) // pack_size, 0)
         return int(amount_packs), int(pack_size)
+
+    def start(self) -> None:
+        pass
 
 
 class ConnectionInterface(object):

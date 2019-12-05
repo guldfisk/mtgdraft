@@ -27,6 +27,7 @@ setup(
         'https://github.com/guldfisk/magiccube/tarball/master#egg=magiccube-1.0',
     ],
     install_requires = [
+        'django',
         'yeetlong',
         'ring',
         'orp',
