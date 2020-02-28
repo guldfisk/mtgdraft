@@ -13,30 +13,6 @@ from magiccube.collections import cubeable as Cubeable
 from draft.models import Booster
 
 
-# class Booster(object):
-#
-#     def __init__(self, booster_id: str, cubeables: Multiset[Cubeable]) -> None:
-#         self._booster_id = booster_id
-#         self._cubeables = cubeables
-#
-#     @property
-#     def booster_id(self) -> str:
-#         return self._booster_id
-#
-#     @property
-#     def cubeables(self) -> Multiset[Cubeable]:
-#         return self._cubeables
-#
-#     def __hash__(self) -> int:
-#         return hash(self._booster_id)
-#
-#     def __eq__(self, other) -> bool:
-#         return (
-#             isinstance(other, self.__class__)
-#             and self._booster_id == other._booster_id
-#         )
-
-
 class DraftClient(ABC):
 
     def __init__(self, host: str, draft_id: str, db: CardDatabase):
@@ -71,7 +47,7 @@ class DraftClient(ABC):
             json.dumps(
                 {
                     'type': 'pick',
-                    'pick': cubeable,
+                    'pick': RawStrategy.serialize(cubeable),
                 }
             )
         )

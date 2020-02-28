@@ -22,7 +22,8 @@ setup(
         'yeetlong @ https://github.com/guldfisk/yeetlong/tarball/master#egg=yeetlong-1.0',
         'ring @ https://github.com/guldfisk/ring/tarball/master#egg=ring-1.0',
         'mtgorp @ https://github.com/guldfisk/mtgorp/tarball/master#egg=mtgorp-1.0',
-        'magiccube @ https://github.com/guldfisk/magiccube/tarball/master#egg=magiccube-1.0', 'websocket'
+        'magiccube @ https://github.com/guldfisk/magiccube/tarball/master#egg=magiccube-1.0',
+        'websocket',
     ],
 
 )

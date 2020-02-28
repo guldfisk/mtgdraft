@@ -3,72 +3,37 @@ from __future__ import annotations
 import typing as t
 import uuid
 
-from magiccube.collections.cube import Cube
-from magiccube.collections.cubeable import Cubeable
-from yeetlong.multiset import Multiset
-
-from mtgorp.models.persistent.printing import Printing
 from mtgorp.models.serilization.serializeable import Serializeable, serialization_model, Inflator
 
-from magiccube.collections import cubeable
-from magiccube.laps.purples.purple import Purple
-from magiccube.laps.tickets.ticket import Ticket
-from magiccube.laps.traps.trap import Trap
+from magiccube.collections.cube import Cube
 
 
-_deserialize_type_map = {
-    'Trap': Trap,
-    'Ticket': Ticket,
-    'Purple': Purple,
-}
+class Booster(Serializeable):
 
-
-class Booster(Cube):
-
-    def __init__(self, booster_id: uuid.UUID, cubeables: t.Optional[t.Iterable[Cubeable]] = None):
-        super().__init__(cubeables)
-        self._booster_id = booster_id
-
-    # def __init__(self, cubeables: t.Iterable[cubeable]):
-    #     self._cubeables = Multiset(cubeables)
-    #     self._booster_id = uuid.uuid4()
+    def __init__(self, cubeables: Cube, booster_id: t.Optional[str] = None):
+        self._cubeables = cubeables
+        self._booster_id = str(uuid.uuid4()) if booster_id is None else booster_id
 
     @property
-    def cubeables(self) -> Multiset[cubeable]:
+    def cubeables(self) -> Cube:
         return self._cubeables
 
     @property
-    def booster_id(self) -> uuid.UUID:
+    def booster_id(self) -> str:
         return self._booster_id
 
     def serialize(self) -> serialization_model:
         return {
-            **super().serialize(),
-            'booster_id': str(self._booster_id),
+            'booster_id': self._booster_id,
+            'cubeables': self._cubeables.serialize(),
         }
 
     @classmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Booster:
-        pass
-
-    # def serialize(self) -> serialization_model:
-    #     return [
-    #         _cubeable.serialize()
-    #         if isinstance(_cubeable, Serializeable) else
-    #         _cubeable
-    #         for _cubeable in
-    #         self._cubeables
-    #     ]
-    #
-    # @classmethod
-    # def deserialize(cls, value: serialization_model, inflator: Inflator) -> Booster:
-    #     return cls(
-    #         inflator.inflate(Printing, _value)
-    #         if isinstance(_value, int) else
-    #         _deserialize_type_map[_value['type']].deserialize(_value, inflator)
-    #         for _value in
-    #         value
-    #     )
+        return cls(
+            booster_id = value['booster_id'],
+            cubeables = Cube.deserialize(value['cubeables'], inflator),
+        )
 
     def __hash__(self) -> int:
         return hash(self._booster_id)
