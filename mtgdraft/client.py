@@ -57,6 +57,9 @@ class DraftClient(ABC):
         self._ws_thread = threading.Thread(target = self._ws.run_forever, daemon = True)
         self._ws_thread.start()
 
+    def close(self):
+        self._ws.close()
+
     @property
     def drafters(self) -> t.List[User]:
         return self._drafters
@@ -113,9 +116,12 @@ class DraftClient(ABC):
 
     def on_open(self):
         pass
-
+    
     def on_message(self, message):
         message = json.loads(message)
+        self._handle_message(message)
+    
+    def _handle_message(self, message: t.Mapping[str, t.Any]):
         print(message)
         message_type = message['type']
 
@@ -137,23 +143,23 @@ class DraftClient(ABC):
             self._on_round(self._round)
 
         elif message_type == 'started':
-            try:
-                self._drafters = [
-                    User.deserialize(
-                        user,
-                        self._api_client,
-                    ) for user in
-                    message['drafters']
-                ]
-                self._draft_format = message['draft_format']
-                self._on_start()
-            except Exception as e:
-                print(e)
-                raise e
+            self._drafters = [
+                User.deserialize(
+                    user,
+                    self._api_client,
+                ) for user in
+                message['drafters']
+            ]
+            self._draft_format = message['draft_format']
+            self._on_start()
 
         elif message_type == 'completed':
             self._completed()
             self._ws.close()
+            
+        elif message_type == 'previous_messages':
+            for sub_message in message['messages']:
+                self._handle_message(sub_message)
 
         else:
             print('unknown message type', message_type)
