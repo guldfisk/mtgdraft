@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 
 import websocket
 
-from cubeclient.models import CubeRelease, User
+from cubeclient.models import User, ApiClient
 from magiccube.laps.purples.purple import Purple
 from magiccube.laps.tickets.ticket import Ticket
 from magiccube.laps.traps.trap import Trap
@@ -15,7 +15,7 @@ from mtgorp.models.serilization.strategies.raw import RawStrategy
 
 from magiccube.collections import cubeable as Cubeable
 
-from draft.models import Booster
+from draft.models import Booster, DraftRound
 
 
 class DraftClient(ABC):
@@ -25,7 +25,8 @@ class DraftClient(ABC):
         'Purple': Purple,
     }
 
-    def __init__(self, host: str, draft_id: str, db: CardDatabase):
+    def __init__(self, api_client: ApiClient, draft_id: str, db: CardDatabase):
+        self._api_client = api_client
         self._draft_id = draft_id
         self._db = db
 
@@ -35,12 +36,14 @@ class DraftClient(ABC):
         self._pack_amount: t.Optional[int] = None
         self._pack_size: t.Optional[int] = None
 
+        self._round: t.Optional[DraftRound] = None
+
         self._lock = threading.Lock()
 
         self._ws = websocket.WebSocketApp(
             'ws://{}/ws/draft/{}/'.format(
-                host,
-                self._draft_id
+                self._api_client.host,
+                self._draft_id,
             ),
             on_message = self.on_message,
             on_error = self.on_error,
@@ -54,26 +57,42 @@ class DraftClient(ABC):
         self._ws_thread = threading.Thread(target = self._ws.run_forever, daemon = True)
         self._ws_thread.start()
 
+    @property
+    def drafters(self) -> t.List[User]:
+        return self._drafters
+
+    @property
+    def round(self) -> DraftRound:
+        return self._round
+
     def _deserialize_cubeable(self, cubeable: t.Any) -> Cubeable:
-        try:
-            return (
-                self._db.printings[cubeable]
-                if isinstance(cubeable, int) else
-                RawStrategy(self._db).deserialize(
-                    self._deserialize_type_map[cubeable['type']],
-                    cubeable,
-                )
+        return (
+            self._db.printings[cubeable]
+            if isinstance(cubeable, int) else
+            RawStrategy(self._db).deserialize(
+                self._deserialize_type_map[cubeable['type']],
+                cubeable,
             )
-        except Exception as e:
-            print(e)
-            raise
+        )
 
     @abstractmethod
-    def _received_booster(self, booster: Booster):
+    def _received_booster(self, booster: Booster) -> None:
         pass
 
     @abstractmethod
-    def _picked(self, pick: Cubeable):
+    def _picked(self, pick: Cubeable) -> None:
+        pass
+
+    @abstractmethod
+    def _completed(self) -> None:
+        pass
+
+    @abstractmethod
+    def _on_start(self) -> None:
+        pass
+    
+    @abstractmethod
+    def _on_round(self, draft_round: DraftRound) -> None:
         pass
 
     def pick(self, cubeable: Cubeable) -> None:
@@ -107,16 +126,34 @@ class DraftClient(ABC):
                     message['booster'],
                 )
             self._received_booster(self._current_booster)
+
         elif message_type == 'pick':
             self._picked(
                 self._deserialize_cubeable(message['pick'])
             )
 
-        elif message_type == 'start':
-            # self._users = [
-            #     User.de
-            # ]
-            pass
+        elif message_type == 'round':
+            self._round = DraftRound(**message['round'])
+            self._on_round(self._round)
+
+        elif message_type == 'started':
+            try:
+                self._drafters = [
+                    User.deserialize(
+                        user,
+                        self._api_client,
+                    ) for user in
+                    message['drafters']
+                ]
+                self._draft_format = message['draft_format']
+                self._on_start()
+            except Exception as e:
+                print(e)
+                raise e
+
+        elif message_type == 'completed':
+            self._completed()
+            self._ws.close()
 
         else:
             print('unknown message type', message_type)
