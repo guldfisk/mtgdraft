@@ -15,7 +15,7 @@ from mtgorp.models.serilization.strategies.raw import RawStrategy
 
 from magiccube.collections import cubeable as Cubeable
 
-from draft.models import Booster, DraftRound
+from mtgdraft.models import Booster, DraftRound
 
 
 class DraftClient(ABC):

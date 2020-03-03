@@ -10,13 +10,13 @@ def package_files(directory):
     return paths
 
 
-extra_files = package_files('draft')
+extra_files = package_files('mtgdraft')
 
 
 setup(
-    name='draft',
+    name='mtgdraft',
     version='1.0',
-    packages=['draft'],
+    packages=['mtgdraft'],
     package_data={'': extra_files},
     install_requires = [
         'yeetlong @ https://github.com/guldfisk/yeetlong/tarball/master#egg=yeetlong-1.0',
