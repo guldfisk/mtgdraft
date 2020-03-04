@@ -63,6 +63,10 @@ class DraftClient(ABC):
     @property
     def drafters(self) -> t.List[User]:
         return self._drafters
+    
+    @property
+    def pack_amount(self) -> int:
+        return self._pack_amount
 
     @property
     def round(self) -> DraftRound:
@@ -151,6 +155,7 @@ class DraftClient(ABC):
                 message['drafters']
             ]
             self._draft_format = message['draft_format']
+            self._pack_amount = message['pack_amount']
             self._on_start()
 
         elif message_type == 'completed':
