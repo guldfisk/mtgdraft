@@ -31,10 +31,10 @@ class DraftClient(ABC):
         self._db = db
 
         self._drafters: t.Optional[t.List[User]] = None
-        self._release: t.Optional[int] = None
         self._draft_format: t.Optional[str] = None
-        self._pack_amount: t.Optional[int] = None
-        self._pack_size: t.Optional[int] = None
+
+        self._pool_id: t.Optional[int] = None
+        self._session_name: t.Optional[str] = None
 
         self._round: t.Optional[DraftRound] = None
 
@@ -65,12 +65,16 @@ class DraftClient(ABC):
         return self._drafters
     
     @property
-    def pack_amount(self) -> int:
-        return self._pack_amount
-
-    @property
     def round(self) -> DraftRound:
         return self._round
+
+    @property
+    def pool_id(self) -> t.Optional[int]:
+        return self._pool_id
+
+    @property
+    def session_name(self) -> t.Optional[str]:
+        return self._session_name
 
     def _deserialize_cubeable(self, cubeable: t.Any) -> Cubeable:
         return (
@@ -91,7 +95,7 @@ class DraftClient(ABC):
         pass
 
     @abstractmethod
-    def _completed(self) -> None:
+    def _completed(self, pool_id: int, session_name: str) -> None:
         pass
 
     @abstractmethod
@@ -154,12 +158,12 @@ class DraftClient(ABC):
                 ) for user in
                 message['drafters']
             ]
-            self._draft_format = message['draft_format']
-            self._pack_amount = message['pack_amount']
             self._on_start()
 
         elif message_type == 'completed':
-            self._completed()
+            self._pool_id = message['pool_id']
+            self._session_name = message['session_name']
+            self._completed(self._pool_id, self._session_name)
             self._ws.close()
             
         elif message_type == 'previous_messages':
