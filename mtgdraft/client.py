@@ -63,7 +63,7 @@ class DraftClient(ABC):
     @property
     def drafters(self) -> t.List[User]:
         return self._drafters
-    
+
     @property
     def round(self) -> DraftRound:
         return self._round
@@ -91,7 +91,7 @@ class DraftClient(ABC):
         pass
 
     @abstractmethod
-    def _picked(self, pick: Cubeable) -> None:
+    def _picked(self, pick: Cubeable, pick_number: int) -> None:
         pass
 
     @abstractmethod
@@ -101,7 +101,7 @@ class DraftClient(ABC):
     @abstractmethod
     def _on_start(self) -> None:
         pass
-    
+
     @abstractmethod
     def _on_round(self, draft_round: DraftRound) -> None:
         pass
@@ -124,11 +124,11 @@ class DraftClient(ABC):
 
     def on_open(self):
         pass
-    
+
     def on_message(self, message):
         message = json.loads(message)
         self._handle_message(message)
-    
+
     def _handle_message(self, message: t.Mapping[str, t.Any]):
         print(message)
         message_type = message['type']
@@ -143,7 +143,8 @@ class DraftClient(ABC):
 
         elif message_type == 'pick':
             self._picked(
-                self._deserialize_cubeable(message['pick'])
+                self._deserialize_cubeable(message['pick']),
+                message['pick_number'],
             )
 
         elif message_type == 'round':
@@ -165,7 +166,7 @@ class DraftClient(ABC):
             self._session_name = message['session_name']
             self._completed(self._pool_id, self._session_name)
             self._ws.close()
-            
+
         elif message_type == 'previous_messages':
             for sub_message in message['messages']:
                 self._handle_message(sub_message)
