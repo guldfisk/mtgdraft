@@ -9,62 +9,39 @@ from abc import ABC, abstractmethod
 import websocket
 
 from mtgorp.db.database import CardDatabase
-from mtgorp.models.persistent.printing import Printing
 from mtgorp.models.serilization.strategies.raw import RawStrategy
-
-from magiccube.laps.purples.purple import Purple
-from magiccube.laps.tickets.ticket import Ticket
-from magiccube.laps.traps.trap import Trap
-from magiccube.collections import cubeable as Cubeable
 
 from cubeclient.models import User, ApiClient
 
-from mtgdraft.models import Booster, DraftRound
-
-_deserialize_type_map = {
-    'Trap': Trap,
-    'Ticket': Ticket,
-    'Purple': Purple,
-}
+from mtgdraft.models import Booster, DraftRound, Pick, SinglePickPick, BurnPick
 
 
-def _serialize_cubeable(cubeable: Cubeable) -> t.Any:
-    return cubeable.id if isinstance(cubeable, Printing) else RawStrategy.serialize(cubeable)
+P = t.TypeVar('P', bound = Pick)
 
 
-class DraftFormat(ABC):
+class DraftFormat(t.Generic[P]):
+    pick_type: t.TypeVar[Pick]
 
     def __init__(self, draft_client: DraftClient):
         self._draft_client = draft_client
 
-    def pick(self, *args, **kwargs) -> t.Any:
+    def pick(self, pick: P) -> t.Any:
         self._draft_client.socket.send(
             json.dumps(
                 {
                     'type': 'pick',
-                    'pick': self._pick(*args, **kwargs),
+                    'pick': pick.serialize(),
                 }
             )
         )
 
-    @abstractmethod
-    def _pick(self, *args, **kwargs) -> t.Any:
-        pass
+
+class SinglePick(DraftFormat[SinglePickPick]):
+    pick_type = SinglePickPick
 
 
-class SinglePick(DraftFormat):
-
-    def _pick(self, pick: Cubeable) -> t.Any:
-        return _serialize_cubeable(pick)
-
-
-class Burn(DraftFormat):
-
-    def _pick(self, pick: Cubeable, burn: t.Optional[Cubeable]) -> t.Any:
-        return {
-            'pick': _serialize_cubeable(pick),
-            'burn': _serialize_cubeable(burn) if burn is not None else None,
-        }
+class Burn(DraftFormat[BurnPick]):
+    pick_type = BurnPick
 
 
 draft_format_map = {
@@ -134,22 +111,12 @@ class DraftClient(ABC):
     def session_name(self) -> t.Optional[str]:
         return self._session_name
 
-    def _deserialize_cubeable(self, cubeable: t.Any) -> Cubeable:
-        return (
-            self._db.printings[cubeable]
-            if isinstance(cubeable, int) else
-            RawStrategy(self._db).deserialize(
-                _deserialize_type_map[cubeable['type']],
-                cubeable,
-            )
-        )
-
     @abstractmethod
     def _received_booster(self, booster: Booster) -> None:
         pass
 
     @abstractmethod
-    def _picked(self, pick: t.Any, pick_number: int) -> None:
+    def _picked(self, pick: Pick, pick_number: int, booster: Booster) -> None:
         pass
 
     @abstractmethod
@@ -191,19 +158,12 @@ class DraftClient(ABC):
 
         elif message_type == 'pick':
             self._picked(
-                (
-                    self._deserialize_cubeable(message['pick'])
-                    if isinstance(self._draft_format, SinglePick) else
-                    {
-                        'pick': self._deserialize_cubeable(message['pick']['pick']),
-                        'burn': (
-                            self._deserialize_cubeable(message['pick']['burn'])
-                            if message['pick']['burn'] is not None else
-                            None
-                        ),
-                    }
+                pick = RawStrategy(self._db).deserialize(self._draft_format.pick_type, message['pick']),
+                pick_number = message['pick_number'],
+                booster = RawStrategy(self._db).deserialize(
+                    Booster,
+                    message['booster'],
                 ),
-                message['pick_number'],
             )
 
         elif message_type == 'round':
