@@ -11,7 +11,7 @@ import websocket
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 
-from cubeclient.models import User, ApiClient
+from cubeclient.models import User, ApiClient, PoolSpecification, BoosterSpecification
 
 from mtgdraft.models import Booster, DraftRound, Pick, SinglePickPick, BurnPick
 
@@ -59,6 +59,7 @@ class DraftClient(ABC):
 
         self._drafters: t.Optional[t.List[User]] = None
         self._draft_format: t.Optional[DraftFormat] = None
+        self._pool_specification: t.Optional[PoolSpecification] = None
 
         self._pool_id: t.Optional[int] = None
         self._session_name: t.Optional[str] = None
@@ -99,6 +100,24 @@ class DraftClient(ABC):
     def draft_format(self) -> DraftFormat:
         return self._draft_format
 
+    @property
+    def pool_specification(self) -> t.Optional[PoolSpecification]:
+        return self._pool_specification
+
+    @property
+    def booster_specification(self) -> t.Optional[BoosterSpecification]:
+        if self._round is None or self._pool_specification is None:
+            return None
+
+        remaining = self._round.pack
+
+        for spec in self._pool_specification.booster_specifications:
+            remaining -= spec.amount
+            if remaining <= 0:
+                return spec
+
+        return self._pool_specification.booster_specifications[-1]
+    
     @property
     def round(self) -> DraftRound:
         return self._round
@@ -179,6 +198,7 @@ class DraftClient(ABC):
                 message['drafters']
             ]
             self._draft_format = draft_format_map[message['draft_format']](self)
+            self._pool_specification = PoolSpecification.deserialize(message['pool_specification'], self._api_client)
             self._on_start()
 
         elif message_type == 'completed':
