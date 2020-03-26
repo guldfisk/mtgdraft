@@ -42,6 +42,11 @@ class Pick(Serializeable):
             cls._deserialize_type_map[cubeable['type']].deserialize(cubeable, inflator)
         )
 
+    @property
+    @abstractmethod
+    def added_cubeables(self) -> t.Iterable[Cubeable]:
+        pass
+
     @abstractmethod
     def serialize(self) -> serialization_model:
         pass
@@ -64,6 +69,10 @@ class SinglePickPick(Pick):
 
     def __init__(self, cubeable: Cubeable):
         self._cubeable = cubeable
+
+    @property
+    def added_cubeables(self) -> t.Iterable[Cubeable]:
+        return self._cubeable,
 
     @property
     def cubeable(self) -> Cubeable:
@@ -91,6 +100,10 @@ class BurnPick(Pick):
     def __init__(self, pick: Cubeable, burn: t.Optional[Cubeable]):
         self._pick = pick
         self._burn = burn
+
+    @property
+    def added_cubeables(self) -> t.Iterable[Cubeable]:
+        return self._pick,
 
     @property
     def pick(self) -> Cubeable:

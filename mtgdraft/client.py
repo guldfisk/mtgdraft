@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 
 import websocket
 
+from magiccube.collections.cube import Cube
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 
@@ -65,6 +66,8 @@ class DraftClient(ABC):
         self._session_name: t.Optional[str] = None
 
         self._round: t.Optional[DraftRound] = None
+        
+        self._pool = Cube()
 
         self._lock = threading.Lock()
 
@@ -91,6 +94,11 @@ class DraftClient(ABC):
 
     def close(self):
         self._ws.close()
+        
+    @property
+    def pool(self) -> Cube:
+        with self._lock:
+            return self._pool
 
     @property
     def drafters(self) -> t.List[User]:
@@ -103,6 +111,11 @@ class DraftClient(ABC):
     @property
     def pool_specification(self) -> t.Optional[PoolSpecification]:
         return self._pool_specification
+
+    @property
+    def current_booster(self) -> t.Optional[Booster]:
+        with self._lock:
+            return self._current_booster
 
     @property
     def booster_specification(self) -> t.Optional[BoosterSpecification]:
@@ -176,8 +189,11 @@ class DraftClient(ABC):
             self._received_booster(self._current_booster)
 
         elif message_type == 'pick':
+            pick = RawStrategy(self._db).deserialize(self._draft_format.pick_type, message['pick'])
+            with self._lock:
+                self._pool += Cube(pick.added_cubeables)
             self._picked(
-                pick = RawStrategy(self._db).deserialize(self._draft_format.pick_type, message['pick']),
+                pick = pick,
                 pick_number = message['pick_number'],
                 booster = RawStrategy(self._db).deserialize(
                     Booster,
