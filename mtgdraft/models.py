@@ -48,13 +48,21 @@ class Pick(Serializeable):
         pass
 
     @abstractmethod
-    def serialize(self) -> serialization_model:
+    def _serialize(self) -> t.Mapping[str, t.Any]:
         pass
+
+    def serialize(self) -> serialization_model:
+        return {
+            'type': self.__class__.__name__,
+            **self._serialize(),
+        }
 
     @classmethod
     @abstractmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
-        pass
+        if isinstance(value, int) or 'burn' not in value:
+            return SinglePickPick.deserialize(value, inflator)
+        return BurnPick.deserialize(value, inflator)
 
     @abstractmethod
     def __hash__(self) -> int:
@@ -78,12 +86,18 @@ class SinglePickPick(Pick):
     def cubeable(self) -> Cubeable:
         return self._cubeable
 
-    def serialize(self) -> serialization_model:
-        return _serialize_cubeable(self._cubeable)
+    def _serialize(self) -> t.Mapping[str, t.Any]:
+        return {
+            'pick': _serialize_cubeable(self._cubeable),
+        }
 
     @classmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
-        return cls(cls._deserialize_cubeable(value, inflator))
+        return cls(
+            cls._deserialize_cubeable(value['pick'], inflator)
+            if isinstance(value, t.Mapping) else
+            cls._deserialize_cubeable(value, inflator)
+        )
 
     def __hash__(self) -> int:
         return hash(self._cubeable)
@@ -113,7 +127,7 @@ class BurnPick(Pick):
     def burn(self) -> t.Optional[Cubeable]:
         return self._burn
 
-    def serialize(self) -> serialization_model:
+    def _serialize(self) -> t.Mapping[str, t.Any]:
         return {
             'pick': _serialize_cubeable(self._pick),
             'burn': None if self._burn is None else _serialize_cubeable(self._burn),
