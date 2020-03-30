@@ -95,7 +95,7 @@ class SinglePickPick(Pick):
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
         return cls(
             cls._deserialize_cubeable(value['pick'], inflator)
-            if isinstance(value, t.Mapping) else
+            if isinstance(value, t.Mapping) and 'pick' in value else
             cls._deserialize_cubeable(value, inflator)
         )
 
