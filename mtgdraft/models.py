@@ -6,19 +6,10 @@ from abc import abstractmethod
 
 from dataclasses import dataclass
 
-from mtgorp.models.persistent.printing import Printing
-from mtgorp.models.serilization.strategies.raw import RawStrategy
 from mtgorp.models.serilization.serializeable import Serializeable, serialization_model, Inflator
 
-from magiccube.laps.purples.purple import Purple
-from magiccube.laps.tickets.ticket import Ticket
-from magiccube.laps.traps.trap import Trap
-from magiccube.collections.cubeable import Cubeable
+from magiccube.collections.cubeable import Cubeable, serialize_cubeable, deserialize_cubeable
 from magiccube.collections.cube import Cube
-
-
-def _serialize_cubeable(cubeable: Cubeable) -> t.Any:
-    return cubeable.id if isinstance(cubeable, Printing) else RawStrategy.serialize(cubeable)
 
 
 @dataclass
@@ -28,19 +19,6 @@ class DraftRound(object):
 
 
 class Pick(Serializeable):
-    _deserialize_type_map = {
-        'Trap': Trap,
-        'Ticket': Ticket,
-        'Purple': Purple,
-    }
-
-    @classmethod
-    def _deserialize_cubeable(cls, cubeable: serialization_model, inflator: Inflator) -> Cubeable:
-        return (
-            inflator.inflate(Printing, cubeable)
-            if isinstance(cubeable, int) else
-            cls._deserialize_type_map[cubeable['type']].deserialize(cubeable, inflator)
-        )
 
     @property
     @abstractmethod
@@ -88,15 +66,15 @@ class SinglePickPick(Pick):
 
     def _serialize(self) -> t.Mapping[str, t.Any]:
         return {
-            'pick': _serialize_cubeable(self._cubeable),
+            'pick': serialize_cubeable(self._cubeable),
         }
 
     @classmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
         return cls(
-            cls._deserialize_cubeable(value['pick'], inflator)
+            deserialize_cubeable(value['pick'], inflator)
             if isinstance(value, t.Mapping) and 'pick' in value else
-            cls._deserialize_cubeable(value, inflator)
+            deserialize_cubeable(value, inflator)
         )
 
     def __hash__(self) -> int:
@@ -129,15 +107,15 @@ class BurnPick(Pick):
 
     def _serialize(self) -> t.Mapping[str, t.Any]:
         return {
-            'pick': _serialize_cubeable(self._pick),
-            'burn': None if self._burn is None else _serialize_cubeable(self._burn),
+            'pick': serialize_cubeable(self._pick),
+            'burn': None if self._burn is None else serialize_cubeable(self._burn),
         }
 
     @classmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
         return cls(
-            cls._deserialize_cubeable(value['pick'], inflator),
-            None if value['burn'] is None else cls._deserialize_cubeable(value['burn'], inflator),
+            deserialize_cubeable(value['pick'], inflator),
+            None if value['burn'] is None else deserialize_cubeable(value['burn'], inflator),
         )
 
     def __hash__(self) -> int:
