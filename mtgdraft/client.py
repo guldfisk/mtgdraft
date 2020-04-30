@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import typing as t
 import json
 import threading
@@ -164,10 +165,10 @@ class DraftClient(ABC):
         pass
 
     def on_error(self, error):
-        print(error)
+        logging.info(f'socket_error: {error}')
 
     def on_close(self):
-        print("### closed ###")
+        logging.info('socket closed')
 
     def on_open(self):
         pass
@@ -177,7 +178,7 @@ class DraftClient(ABC):
         self._handle_message(message)
 
     def _handle_message(self, message: t.Mapping[str, t.Any]):
-        print(message)
+        logging.info(f'received {message}')
         message_type = message['type']
 
         if message_type == 'booster':
@@ -228,4 +229,4 @@ class DraftClient(ABC):
                 self._handle_message(sub_message)
 
         else:
-            print('unknown message type', message_type)
+            logging.warning(f'unknown message type {message_type}')
