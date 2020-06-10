@@ -89,6 +89,10 @@ class DraftClient(ABC):
         self._ws_thread = threading.Thread(target = self._ws.run_forever, daemon = True)
         self._ws_thread.start()
 
+    def get_previous_booster(self, booster_id: str) -> t.Optional[Booster]:
+        with self._lock:
+            return self._booster_map.get(booster_id)
+
     @property
     def socket(self) -> websocket.WebSocketApp:
         return self._ws
@@ -187,6 +191,8 @@ class DraftClient(ABC):
                     Booster,
                     message['booster'],
                 )
+                if self._current_booster.booster_id not in self._booster_map:
+                    self._booster_map[self._current_booster.booster_id] = self._current_booster
             self._received_booster(self._current_booster)
 
         elif message_type == 'pick':
