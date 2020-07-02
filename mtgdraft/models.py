@@ -135,11 +135,12 @@ class Booster(Serializeable):
         self,
         cubeables: Cube,
         booster_id: t.Optional[str] = None,
-        pick: int = 1,
+        pick_number: int = 1,
     ):
         self._cubeables = cubeables
         self._booster_id = str(uuid.uuid4()) if booster_id is None else booster_id
-        self._pick = pick
+        self.pick_number: int = pick_number
+        self.pick: t.Optional[Pick] = None
 
     @property
     def cubeables(self) -> Cube:
@@ -153,19 +154,11 @@ class Booster(Serializeable):
     def booster_id(self) -> str:
         return self._booster_id
 
-    @property
-    def pick(self) -> int:
-        return self._pick
-
-    @pick.setter
-    def pick(self, value: int) -> None:
-        self._pick = value
-
     def serialize(self) -> serialization_model:
         return {
             'booster_id': self._booster_id,
             'cubeables': self._cubeables.serialize(),
-            'pick': self._pick,
+            'pick': self.pick_number,
         }
 
     @classmethod
@@ -173,7 +166,7 @@ class Booster(Serializeable):
         return cls(
             booster_id = value['booster_id'],
             cubeables = Cube.deserialize(value['cubeables'], inflator),
-            pick = value['pick'],
+            pick_number = value['pick'],
         )
 
     def __hash__(self) -> int:

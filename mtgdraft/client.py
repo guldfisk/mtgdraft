@@ -62,6 +62,7 @@ class DraftClient(ABC):
         self._drafters: t.Optional[t.List[User]] = None
         self._draft_format: t.Optional[DraftFormat] = None
         self._pool_specification: t.Optional[PoolSpecification] = None
+        self._reverse: t.Optional[bool] = None
 
         self._pool_id: t.Optional[int] = None
         self._session_name: t.Optional[str] = None
@@ -83,13 +84,13 @@ class DraftClient(ABC):
         )
         self._ws.on_open = self.on_open
 
-        self._booster_map: t.MutableMapping[str, Booster] = {}
+        self._booster_map: t.MutableMapping[str, t.List[Booster]] = {}
         self._current_booster: t.Optional[Booster] = None
 
         self._ws_thread = threading.Thread(target = self._ws.run_forever, daemon = True)
         self._ws_thread.start()
 
-    def get_previous_booster(self, booster_id: str) -> t.Optional[Booster]:
+    def get_previous_boosters(self, booster_id: str) -> t.Optional[t.List[Booster]]:
         with self._lock:
             return self._booster_map.get(booster_id)
 
@@ -112,6 +113,10 @@ class DraftClient(ABC):
     @property
     def draft_format(self) -> DraftFormat:
         return self._draft_format
+
+    @property
+    def reverse(self) -> t.Optional[bool]:
+        return self._reverse
 
     @property
     def pool_specification(self) -> t.Optional[PoolSpecification]:
@@ -191,14 +196,18 @@ class DraftClient(ABC):
                     Booster,
                     message['booster'],
                 )
-                if self._current_booster.booster_id not in self._booster_map:
-                    self._booster_map[self._current_booster.booster_id] = self._current_booster
+                try:
+                    self._booster_map[self._current_booster.booster_id].append(self._current_booster)
+                except KeyError:
+                    self._booster_map[self._current_booster.booster_id] = [self._current_booster]
             self._received_booster(self._current_booster)
 
         elif message_type == 'pick':
             pick = RawStrategy(self._db).deserialize(self._draft_format.pick_type, message['pick'])
             with self._lock:
                 self._pool += Cube(pick.added_cubeables)
+                self._current_booster.pick = pick
+
             self._picked(
                 pick = pick,
                 pick_number = message['pick_number'],
@@ -222,6 +231,7 @@ class DraftClient(ABC):
             ]
             self._draft_format = draft_format_map[message['draft_format']](self)
             self._pool_specification = PoolSpecification.deserialize(message['pool_specification'], self._api_client)
+            self._reverse = message['reverse']
             self._on_start()
 
         elif message_type == 'completed':
