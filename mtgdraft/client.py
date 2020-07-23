@@ -9,9 +9,11 @@ from abc import ABC, abstractmethod
 
 import websocket
 
-from magiccube.collections.cube import Cube
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.serilization.strategies.raw import RawStrategy
+
+from magiccube.collections.cube import Cube
+from magiccube.collections.infinites import Infinites
 
 from cubeclient.models import User, ApiClient, PoolSpecification, BoosterSpecification
 
@@ -62,13 +64,14 @@ class DraftClient(ABC):
         self._drafters: t.Optional[t.List[User]] = None
         self._draft_format: t.Optional[DraftFormat] = None
         self._pool_specification: t.Optional[PoolSpecification] = None
+        self._infinites: t.Optional[Infinites] = None
         self._reverse: t.Optional[bool] = None
 
         self._pool_id: t.Optional[int] = None
         self._session_name: t.Optional[str] = None
 
         self._round: t.Optional[DraftRound] = None
-        
+
         self._pool = Cube()
 
         self._lock = threading.Lock()
@@ -100,7 +103,7 @@ class DraftClient(ABC):
 
     def close(self):
         self._ws.close()
-        
+
     @property
     def pool(self) -> Cube:
         with self._lock:
@@ -123,6 +126,10 @@ class DraftClient(ABC):
         return self._pool_specification
 
     @property
+    def infinites(self) -> t.Optional[Infinites]:
+        return self._infinites
+
+    @property
     def current_booster(self) -> t.Optional[Booster]:
         with self._lock:
             return self._current_booster
@@ -140,7 +147,7 @@ class DraftClient(ABC):
                 return spec
 
         return self._pool_specification.booster_specifications[-1]
-    
+
     @property
     def round(self) -> DraftRound:
         return self._round
@@ -231,6 +238,7 @@ class DraftClient(ABC):
             ]
             self._draft_format = draft_format_map[message['draft_format']](self)
             self._pool_specification = PoolSpecification.deserialize(message['pool_specification'], self._api_client)
+            self._infinites = RawStrategy(self._db).deserialize(Infinites, message['infinites'])
             self._reverse = message['reverse']
             self._on_start()
 
