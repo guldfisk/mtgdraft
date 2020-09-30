@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import logging
-import typing as t
 import json
+import logging
 import threading
-
+import typing as t
 from abc import ABC, abstractmethod
+from collections import defaultdict
 
 import websocket
+
+from ring import Ring
 
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.serilization.strategies.raw import RawStrategy
@@ -15,43 +17,45 @@ from mtgorp.models.serilization.strategies.raw import RawStrategy
 from magiccube.collections.cube import Cube
 from magiccube.collections.infinites import Infinites
 
-from cubeclient.models import User, ApiClient, PoolSpecification, BoosterSpecification
+from cubeclient.models import User, ApiClient, PoolSpecification
 
-from mtgdraft.models import Booster, DraftRound, Pick, SinglePickPick, BurnPick
-
-
-P = t.TypeVar('P', bound = Pick)
+from mtgdraft.models import DraftBooster, DraftRound, DraftConfiguration, draft_format_map, PickPoint, DraftFormat
 
 
-class DraftFormat(t.Generic[P]):
-    pick_type: t.TypeVar[Pick]
+class PickHistory(object):
 
-    def __init__(self, draft_client: DraftClient):
-        self._draft_client = draft_client
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._picks: t.List[PickPoint] = []
+        self._picks_map: t.MutableMapping[str, t.List[PickPoint]] = defaultdict(list)
 
-    def pick(self, pick: P) -> t.Any:
-        self._draft_client.socket.send(
-            json.dumps(
-                {
-                    'type': 'pick',
-                    'pick': pick.serialize(),
-                }
-            )
-        )
+    @property
+    def current(self) -> t.Optional[PickPoint]:
+        with self._lock:
+            return self._picks[-1]
 
+    def add_pick(self, pick: PickPoint) -> None:
+        with self._lock:
+            self._picks.append(pick)
+            self._picks_map[pick.booster.booster_id].append(pick)
 
-class SinglePick(DraftFormat[SinglePickPick]):
-    pick_type = SinglePickPick
+    def preceding_picks(self, pick: PickPoint) -> t.List[PickPoint]:
+        with self._lock:
+            picks = []
+            for _pick in self._picks_map[pick.booster.booster_id]:
+                if _pick == pick:
+                    break
+                picks.append(_pick)
+            return picks
 
+    def __getitem__(self, item) -> PickPoint:
+        with self._lock:
+            return self._picks[item]
 
-class Burn(DraftFormat[BurnPick]):
-    pick_type = BurnPick
-
-
-draft_format_map = {
-    'single_pick': SinglePick,
-    'burn': Burn,
-}
+    def __iter__(self) -> t.Iterator[PickPoint]:
+        with self._lock:
+            for pick in self._picks:
+                yield pick
 
 
 class DraftClient(ABC):
@@ -61,16 +65,18 @@ class DraftClient(ABC):
         self._draft_id = draft_id
         self._db = db
 
-        self._drafters: t.Optional[t.List[User]] = None
         self._draft_format: t.Optional[DraftFormat] = None
-        self._pool_specification: t.Optional[PoolSpecification] = None
-        self._infinites: t.Optional[Infinites] = None
-        self._reverse: t.Optional[bool] = None
+        self._draft_configuration: t.Optional[DraftConfiguration] = None
 
         self._pool_id: t.Optional[int] = None
         self._session_name: t.Optional[str] = None
 
         self._round: t.Optional[DraftRound] = None
+
+        self._pick_counter = 0
+        self._global_pick_counter = 0
+
+        self._history = PickHistory()
 
         self._pool = Cube()
 
@@ -87,15 +93,20 @@ class DraftClient(ABC):
         )
         self._ws.on_open = self.on_open
 
-        self._booster_map: t.MutableMapping[str, t.List[Booster]] = {}
-        self._current_booster: t.Optional[Booster] = None
-
         self._ws_thread = threading.Thread(target = self._ws.run_forever, daemon = True)
         self._ws_thread.start()
 
-    def get_previous_boosters(self, booster_id: str) -> t.Optional[t.List[Booster]]:
-        with self._lock:
-            return self._booster_map.get(booster_id)
+    @property
+    def history(self) -> PickHistory:
+        return self._history
+
+    @property
+    def draft_format(self) -> t.Optional[DraftFormat]:
+        return self._draft_format
+
+    @property
+    def draft_configuration(self) -> t.Optional[DraftConfiguration]:
+        return self._draft_configuration
 
     @property
     def socket(self) -> websocket.WebSocketApp:
@@ -110,45 +121,6 @@ class DraftClient(ABC):
             return self._pool
 
     @property
-    def drafters(self) -> t.List[User]:
-        return self._drafters
-
-    @property
-    def draft_format(self) -> DraftFormat:
-        return self._draft_format
-
-    @property
-    def reverse(self) -> t.Optional[bool]:
-        return self._reverse
-
-    @property
-    def pool_specification(self) -> t.Optional[PoolSpecification]:
-        return self._pool_specification
-
-    @property
-    def infinites(self) -> t.Optional[Infinites]:
-        return self._infinites
-
-    @property
-    def current_booster(self) -> t.Optional[Booster]:
-        with self._lock:
-            return self._current_booster
-
-    @property
-    def booster_specification(self) -> t.Optional[BoosterSpecification]:
-        if self._round is None or self._pool_specification is None:
-            return None
-
-        remaining = self._round.pack
-
-        for spec in self._pool_specification.booster_specifications:
-            remaining -= spec.amount
-            if remaining <= 0:
-                return spec
-
-        return self._pool_specification.booster_specifications[-1]
-
-    @property
     def round(self) -> DraftRound:
         return self._round
 
@@ -161,11 +133,11 @@ class DraftClient(ABC):
         return self._session_name
 
     @abstractmethod
-    def _received_booster(self, booster: Booster) -> None:
+    def _received_booster(self, pick_point: PickPoint) -> None:
         pass
 
     @abstractmethod
-    def _picked(self, pick: Pick, pick_number: int, booster: Booster) -> None:
+    def _picked(self, pick_point: PickPoint) -> None:
         pass
 
     @abstractmethod
@@ -173,7 +145,7 @@ class DraftClient(ABC):
         pass
 
     @abstractmethod
-    def _on_start(self) -> None:
+    def _on_start(self, draft_configuration: DraftConfiguration) -> None:
         pass
 
     @abstractmethod
@@ -181,66 +153,80 @@ class DraftClient(ABC):
         pass
 
     def on_error(self, error):
-        logging.info(f'socket_error: {error}')
+        logging.error(f'socket_error: {error}')
 
     def on_close(self):
         logging.info('socket closed')
 
-    def on_open(self):
+    def on_open(self) -> None:
         pass
 
-    def on_message(self, message):
-        message = json.loads(message)
-        self._handle_message(message)
+    def on_message(self, message) -> None:
+        self._handle_message(
+            json.loads(message)
+        )
 
-    def _handle_message(self, message: t.Mapping[str, t.Any]):
+    def _handle_message(self, message: t.Mapping[str, t.Any]) -> None:
         logging.info(f'received {message}')
         message_type = message['type']
 
         if message_type == 'booster':
-            with self._lock:
-                self._current_booster = RawStrategy(self._db).deserialize(
-                    Booster,
-                    message['booster'],
-                )
-                try:
-                    self._booster_map[self._current_booster.booster_id].append(self._current_booster)
-                except KeyError:
-                    self._booster_map[self._current_booster.booster_id] = [self._current_booster]
-            self._received_booster(self._current_booster)
-
-        elif message_type == 'pick':
-            pick = RawStrategy(self._db).deserialize(self._draft_format.pick_type, message['pick'])
-            with self._lock:
-                self._pool += Cube(pick.added_cubeables)
-                self._current_booster.pick = pick
-
-            self._picked(
-                pick = pick,
-                pick_number = message['pick_number'],
-                booster = RawStrategy(self._db).deserialize(
-                    Booster,
-                    message['booster'],
-                ),
+            booster = RawStrategy(self._db).deserialize(
+                DraftBooster,
+                message['booster'],
             )
 
+            self._pick_counter += 1
+            self._global_pick_counter += 1
+
+            pick_point = PickPoint(
+                self._draft_id,
+                self._global_pick_counter,
+                self._round,
+                self._pick_counter,
+                booster,
+            )
+
+            self._history.add_pick(pick_point)
+
+            self._received_booster(pick_point)
+
+        elif message_type == 'pick':
+            pick = RawStrategy(self._db).deserialize(
+                self._draft_configuration.draft_format.pick_type,
+                message['pick'],
+            )
+            with self._lock:
+                self._pool += Cube(pick.added_cubeables)
+            pick_point = self._history.current
+            pick_point.set_pick(pick)
+            self._picked(pick_point)
+
         elif message_type == 'round':
-            self._round = DraftRound(**message['round'])
+            self._round = DraftRound(
+                booster_specification = self._draft_configuration.booster_specification_at(message['round']['pack']),
+                **message['round'],
+            )
+            self._pick_counter = 0
             self._on_round(self._round)
 
         elif message_type == 'started':
-            self._drafters = [
-                User.deserialize(
-                    user,
-                    self._api_client,
-                ) for user in
-                message['drafters']
-            ]
-            self._draft_format = draft_format_map[message['draft_format']](self)
-            self._pool_specification = PoolSpecification.deserialize(message['pool_specification'], self._api_client)
-            self._infinites = RawStrategy(self._db).deserialize(Infinites, message['infinites'])
-            self._reverse = message['reverse']
-            self._on_start()
+            draft_format_type = draft_format_map[message['draft_format']]
+            self._draft_configuration = DraftConfiguration(
+                drafters = Ring(
+                    User.deserialize(
+                        user,
+                        self._api_client,
+                    ) for user in
+                    message['drafters']
+                ),
+                draft_format = draft_format_type,
+                pool_specification = PoolSpecification.deserialize(message['pool_specification'], self._api_client),
+                infinites = RawStrategy(self._db).deserialize(Infinites, message['infinites']),
+                reverse = message['reverse'],
+            )
+            self._draft_format = draft_format_type(self)
+            self._on_start(self._draft_configuration)
 
         elif message_type == 'completed':
             self._pool_id = message['pool_id']
