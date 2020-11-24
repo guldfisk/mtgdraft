@@ -161,7 +161,7 @@ class BaseClient(ABC):
 
 
 class DraftFormat(t.Generic[P]):
-    pick_type: t.TypeVar[Pick]
+    pick_type: t.Type[Pick]
 
     def __init__(self, draft_client: BaseClient):
         self._draft_client = draft_client
