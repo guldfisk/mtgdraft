@@ -23,6 +23,11 @@ class Pick(Serializeable):
 
     @property
     @abstractmethod
+    def picked(self) -> t.Iterable[Cubeable]:
+        pass
+
+    @property
+    @abstractmethod
     def added_cubeables(self) -> t.Iterable[Cubeable]:
         pass
 
@@ -62,6 +67,10 @@ class SinglePickPick(Pick):
 
     def __init__(self, cubeable: Cubeable):
         self._cubeable = cubeable
+
+    @property
+    def picked(self) -> t.Iterable[Cubeable]:
+        return self._cubeable,
 
     @property
     def added_cubeables(self) -> t.Iterable[Cubeable]:
@@ -105,6 +114,10 @@ class BurnPick(Pick):
     def __init__(self, pick: Cubeable, burn: t.Optional[Cubeable]):
         self._pick = pick
         self._burn = burn
+
+    @property
+    def picked(self) -> t.Iterable[Cubeable]:
+        return self._pick, self._burn
 
     @property
     def added_cubeables(self) -> t.Iterable[Cubeable]:
