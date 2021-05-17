@@ -152,6 +152,9 @@ class DraftClient(ABC):
     def _on_round(self, draft_round: DraftRound) -> None:
         pass
 
+    def _on_message_error(self, error: Exception) -> None:
+        raise error
+
     def on_error(self, error):
         logging.error(f'socket_error: {error}')
 
@@ -162,9 +165,12 @@ class DraftClient(ABC):
         pass
 
     def on_message(self, message) -> None:
-        self._handle_message(
-            json.loads(message)
-        )
+        try:
+            self._handle_message(
+                json.loads(message)
+            )
+        except Exception as e:
+            self._on_message_error(e)
 
     def _handle_message(self, message: t.Mapping[str, t.Any]) -> None:
         logging.info(f'received {message}')
