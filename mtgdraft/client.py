@@ -24,9 +24,9 @@ from mtgdraft.models import DraftBooster, DraftRound, DraftConfiguration, draft_
 
 class PickHistory(t.Sequence[PickPoint]):
 
-    def __init__(self, *, wrapping: t.Optional[t.MutableSequence[PickPoint]] = None):
+    def __init__(self):
         self._lock = threading.Lock()
-        self._picks: t.MutableSequence[PickPoint] = [] if wrapping is None else wrapping
+        self._picks: t.MutableSequence[PickPoint] = []
         self._picks_map: t.MutableMapping[str, t.List[PickPoint]] = defaultdict(list)
 
     @property
@@ -98,8 +98,6 @@ class DraftClient(ABC):
         self,
         api_client: ApiClient,
         draft_id: str, db: CardDatabase,
-        *,
-        pick_history_wrapping: t.Optional[t.MutableSequence[PickHistory]] = None,
     ):
         self._api_client = api_client
         self._draft_id = draft_id
@@ -116,7 +114,7 @@ class DraftClient(ABC):
         self._pick_counter = 0
         self._global_pick_counter = 0
 
-        self._history = PickHistory(wrapping = pick_history_wrapping)
+        self._history = PickHistory()
         self._booster_tracker: t.Optional[BoosterTracker] = None
 
         self._user_map: t.MutableMapping[int, User] = {}
