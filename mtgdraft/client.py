@@ -22,17 +22,20 @@ from cubeclient.models import User, ApiClient, PoolSpecification
 from mtgdraft.models import DraftBooster, DraftRound, DraftConfiguration, draft_format_map, PickPoint, DraftFormat
 
 
-class PickHistory(object):
+class PickHistory(t.Sequence[PickPoint]):
 
-    def __init__(self):
+    def __init__(self, *, wrapping: t.Optional[t.MutableSequence[PickPoint]] = None):
         self._lock = threading.Lock()
-        self._picks: t.List[PickPoint] = []
+        self._picks: t.MutableSequence[PickPoint] = [] if wrapping is None else wrapping
         self._picks_map: t.MutableMapping[str, t.List[PickPoint]] = defaultdict(list)
 
     @property
     def current(self) -> t.Optional[PickPoint]:
         with self._lock:
-            return self._picks[-1]
+            try:
+                return self._picks[-1]
+            except IndexError:
+                return None
 
     def add_pick(self, pick: PickPoint) -> None:
         with self._lock:
@@ -57,10 +60,47 @@ class PickHistory(object):
             for pick in self._picks:
                 yield pick
 
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._picks)
+
+
+class BoosterTracker(t.MutableMapping[User, int]):
+
+    def __init__(self, users: t.Iterable[User]):
+        self._user_map = {user: 0 for user in users}
+        self._lock = threading.Lock()
+
+    def __setitem__(self, k: User, v: int) -> None:
+        with self._lock:
+            self._user_map[k] = v
+
+    def __delitem__(self, v: User) -> None:
+        raise NotImplemented()
+
+    def __getitem__(self, k: User) -> int:
+        with self._lock:
+            return self._user_map[k]
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._user_map)
+
+    def __iter__(self) -> t.Iterator[User]:
+        with self._lock:
+            for k in self._user_map.keys():
+                yield k
+
 
 class DraftClient(ABC):
 
-    def __init__(self, api_client: ApiClient, draft_id: str, db: CardDatabase):
+    def __init__(
+        self,
+        api_client: ApiClient,
+        draft_id: str, db: CardDatabase,
+        *,
+        pick_history_wrapping: t.Optional[t.MutableSequence[PickHistory]] = None,
+    ):
         self._api_client = api_client
         self._draft_id = draft_id
         self._db = db
@@ -76,7 +116,10 @@ class DraftClient(ABC):
         self._pick_counter = 0
         self._global_pick_counter = 0
 
-        self._history = PickHistory()
+        self._history = PickHistory(wrapping = pick_history_wrapping)
+        self._booster_tracker: t.Optional[BoosterTracker] = None
+
+        self._user_map: t.MutableMapping[int, User] = {}
 
         self._pool = Cube()
 
@@ -99,6 +142,10 @@ class DraftClient(ABC):
     @property
     def history(self) -> PickHistory:
         return self._history
+
+    @property
+    def booster_tracker(self) -> BoosterTracker:
+        return self._booster_tracker
 
     @property
     def draft_format(self) -> t.Optional[DraftFormat]:
@@ -152,6 +199,10 @@ class DraftClient(ABC):
     def _on_round(self, draft_round: DraftRound) -> None:
         pass
 
+    @abstractmethod
+    def _on_boosters_changed(self, booster_tracker: BoosterTracker) -> None:
+        pass
+
     def _on_message_error(self, error: Exception) -> None:
         raise error
 
@@ -197,6 +248,10 @@ class DraftClient(ABC):
 
             self._received_booster(pick_point)
 
+        elif message_type == 'booster_amount_update':
+            self._booster_tracker[self._user_map[message['drafter']]] = message['queue_size']
+            self._on_boosters_changed(self._booster_tracker)
+
         elif message_type == 'pick':
             pick = RawStrategy(self._db).deserialize(
                 self._draft_configuration.draft_format.pick_type,
@@ -232,6 +287,8 @@ class DraftClient(ABC):
                 reverse = message['reverse'],
             )
             self._draft_format = draft_format_type(self)
+            self._user_map = {u.id: u for u in self._draft_configuration.drafters.all}
+            self._booster_tracker = BoosterTracker(self._draft_configuration.drafters.all)
             self._on_start(self._draft_configuration)
 
         elif message_type == 'completed':
