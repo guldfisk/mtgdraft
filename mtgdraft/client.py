@@ -124,7 +124,7 @@ class DraftClient(ABC):
         self._lock = threading.Lock()
 
         self._ws = websocket.WebSocketApp(
-            'ws://{}/ws/draft/{}/'.format(
+            'wss://{}/ws/draft/{}/'.format(
                 self._api_client.host,
                 self._draft_id,
             ),
