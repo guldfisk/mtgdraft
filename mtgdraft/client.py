@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import ssl
 import threading
 import typing as t
 from abc import ABC, abstractmethod
@@ -98,6 +99,8 @@ class DraftClient(ABC):
         self,
         api_client: ApiClient,
         draft_id: str, db: CardDatabase,
+        *,
+        verify_ssl: bool = True,
     ):
         self._api_client = api_client
         self._draft_id = draft_id
@@ -135,7 +138,11 @@ class DraftClient(ABC):
         )
         self._ws.on_open = self.on_open
 
-        self._ws_thread = threading.Thread(target = self._ws.run_forever, daemon = True)
+        self._ws_thread = threading.Thread(
+            target = self._ws.run_forever,
+            daemon = True,
+            kwargs = None if verify_ssl else {'sslopt': {'cert_reqs': ssl.CERT_NONE}},
+        )
         self._ws_thread.start()
 
     @property
