@@ -186,7 +186,7 @@ class DraftClient(ABC):
         return self._session_name
 
     @abstractmethod
-    def _received_booster(self, pick_point: PickPoint) -> None:
+    def _received_booster(self, pick_point: PickPoint, timeout: t.Optional[float], began_at: float) -> None:
         pass
 
     @abstractmethod
@@ -252,7 +252,7 @@ class DraftClient(ABC):
 
             self._history.add_pick(pick_point)
 
-            self._received_booster(pick_point)
+            self._received_booster(pick_point, message['timeout'], message['began_at'])
 
         elif message_type == 'booster_amount_update':
             self._booster_tracker[self._user_map[message['drafter']]] = message['queue_size']
