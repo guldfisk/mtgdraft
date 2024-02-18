@@ -3,24 +3,27 @@ from __future__ import annotations
 import json
 import typing as t
 import uuid
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import websocket
-
-from ring import Ring
-
-from mtgorp.models.serilization.serializeable import Serializeable, serialization_model, Inflator
-
-from magiccube.collections.infinites import Infinites
-from magiccube.collections.cubeable import Cubeable, serialize_cubeable, deserialize_cubeable
+from cubeclient.models import BoosterSpecification, PoolSpecification, User
 from magiccube.collections.cube import Cube
-
-from cubeclient.models import User, PoolSpecification, BoosterSpecification
+from magiccube.collections.cubeable import (
+    Cubeable,
+    deserialize_cubeable,
+    serialize_cubeable,
+)
+from magiccube.collections.infinites import Infinites
+from mtgorp.models.serilization.serializeable import (
+    Inflator,
+    Serializeable,
+    serialization_model,
+)
+from ring import Ring
 
 
 class Pick(Serializeable):
-
     @property
     @abstractmethod
     def picked(self) -> t.Iterable[Cubeable]:
@@ -41,15 +44,12 @@ class Pick(Serializeable):
         pass
 
     def serialize(self) -> serialization_model:
-        return {
-            'type': self.__class__.__name__,
-            **self._serialize(),
-        }
+        return {"type": self.__class__.__name__, **self._serialize()}
 
     @classmethod
     @abstractmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
-        if isinstance(value, int) or 'burn' not in value:
+        if isinstance(value, int) or "burn" not in value:
             return SinglePickPick.deserialize(value, inflator)
         return BurnPick.deserialize(value, inflator)
 
@@ -62,20 +62,16 @@ class Pick(Serializeable):
         pass
 
     def __repr__(self) -> str:
-        return '{}({})'.format(
-            self.__class__.__name__,
-            ', '.join(map(str, self.added_cubeables)),
-        )
+        return "{}({})".format(self.__class__.__name__, ", ".join(map(str, self.added_cubeables)))
 
 
 class SinglePickPick(Pick):
-
     def __init__(self, cubeable: Cubeable):
         self._cubeable = cubeable
 
     @property
     def picked(self) -> t.Iterable[Cubeable]:
-        return self._cubeable,
+        return (self._cubeable,)
 
     @property
     def main_picked(self) -> Cubeable:
@@ -83,43 +79,34 @@ class SinglePickPick(Pick):
 
     @property
     def added_cubeables(self) -> t.Iterable[Cubeable]:
-        return self._cubeable,
+        return (self._cubeable,)
 
     @property
     def cubeable(self) -> Cubeable:
         return self._cubeable
 
     def _serialize(self) -> t.Mapping[str, t.Any]:
-        return {
-            'pick': serialize_cubeable(self._cubeable),
-        }
+        return {"pick": serialize_cubeable(self._cubeable)}
 
     @classmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
         return cls(
-            deserialize_cubeable(value['pick'], inflator)
-            if isinstance(value, t.Mapping) and 'pick' in value else
-            deserialize_cubeable(value, inflator)
+            deserialize_cubeable(value["pick"], inflator)
+            if isinstance(value, t.Mapping) and "pick" in value
+            else deserialize_cubeable(value, inflator)
         )
 
     def __hash__(self) -> int:
         return hash(self._cubeable)
 
     def __eq__(self, other: object) -> bool:
-        return (
-            isinstance(other, self.__class__)
-            and self._cubeable == other._cubeable
-        )
+        return isinstance(other, self.__class__) and self._cubeable == other._cubeable
 
     def __repr__(self) -> str:
-        return '{}({})'.format(
-            self.__class__.__name__,
-            self._cubeable,
-        )
+        return "{}({})".format(self.__class__.__name__, self._cubeable)
 
 
 class BurnPick(Pick):
-
     def __init__(self, pick: Cubeable, burn: t.Optional[Cubeable]):
         self._pick = pick
         self._burn = burn
@@ -134,7 +121,7 @@ class BurnPick(Pick):
 
     @property
     def added_cubeables(self) -> t.Iterable[Cubeable]:
-        return self._pick,
+        return (self._pick,)
 
     @property
     def pick(self) -> Cubeable:
@@ -146,40 +133,31 @@ class BurnPick(Pick):
 
     def _serialize(self) -> t.Mapping[str, t.Any]:
         return {
-            'pick': serialize_cubeable(self._pick),
-            'burn': None if self._burn is None else serialize_cubeable(self._burn),
+            "pick": serialize_cubeable(self._pick),
+            "burn": None if self._burn is None else serialize_cubeable(self._burn),
         }
 
     @classmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
         return cls(
-            deserialize_cubeable(value['pick'], inflator),
-            None if value['burn'] is None else deserialize_cubeable(value['burn'], inflator),
+            deserialize_cubeable(value["pick"], inflator),
+            None if value["burn"] is None else deserialize_cubeable(value["burn"], inflator),
         )
 
     def __hash__(self) -> int:
         return hash((self._pick, self._burn))
 
     def __eq__(self, other: object) -> bool:
-        return (
-            isinstance(other, self.__class__)
-            and self._pick == other._pick
-            and self._burn == other._burn
-        )
+        return isinstance(other, self.__class__) and self._pick == other._pick and self._burn == other._burn
 
     def __repr__(self) -> str:
-        return '{}({}, {})'.format(
-            self.__class__.__name__,
-            self._pick,
-            self._burn,
-        )
+        return "{}({}, {})".format(self.__class__.__name__, self._pick, self._burn)
 
 
-P = t.TypeVar('P', bound = Pick)
+P = t.TypeVar("P", bound=Pick)
 
 
 class BaseClient(ABC):
-
     @property
     @abstractmethod
     def socket(self) -> websocket.WebSocketApp:
@@ -193,14 +171,7 @@ class DraftFormat(t.Generic[P]):
         self._draft_client = draft_client
 
     def pick(self, pick: P) -> t.Any:
-        self._draft_client.socket.send(
-            json.dumps(
-                {
-                    'type': 'pick',
-                    'pick': pick.serialize(),
-                }
-            )
-        )
+        self._draft_client.socket.send(json.dumps({"type": "pick", "pick": pick.serialize()}))
 
 
 class SinglePick(DraftFormat[SinglePickPick]):
@@ -212,8 +183,8 @@ class Burn(DraftFormat[BurnPick]):
 
 
 draft_format_map = {
-    'single_pick': SinglePick,
-    'burn': Burn,
+    "single_pick": SinglePick,
+    "burn": Burn,
 }
 
 
@@ -242,7 +213,6 @@ class DraftRound(object):
 
 
 class DraftBooster(Serializeable):
-
     def __init__(
         self,
         cubeables: Cube,
@@ -268,37 +238,30 @@ class DraftBooster(Serializeable):
 
     def serialize(self) -> serialization_model:
         return {
-            'booster_id': self._booster_id,
-            'cubeables': self._cubeables.serialize(),
-            'pick': self.pick_number,
+            "booster_id": self._booster_id,
+            "cubeables": self._cubeables.serialize(),
+            "pick": self.pick_number,
         }
 
     @classmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> DraftBooster:
         return cls(
-            booster_id = value['booster_id'],
-            cubeables = Cube.deserialize(value['cubeables'], inflator),
-            pick_number = value['pick'],
+            booster_id=value["booster_id"],
+            cubeables=Cube.deserialize(value["cubeables"], inflator),
+            pick_number=value["pick"],
         )
 
     def __hash__(self) -> int:
         return hash(self._booster_id)
 
     def __eq__(self, other: object) -> bool:
-        return (
-            isinstance(other, self.__class__)
-            and self._booster_id == other._booster_id
-        )
+        return isinstance(other, self.__class__) and self._booster_id == other._booster_id
 
     def __repr__(self) -> str:
-        return '{}({})'.format(
-            self.__class__.__name__,
-            self._booster_id,
-        )
+        return "{}({})".format(self.__class__.__name__, self._booster_id)
 
 
 class PickPoint(object):
-
     def __init__(
         self,
         draft_id: str,
@@ -336,7 +299,7 @@ class PickPoint(object):
 
     def set_pick(self, pick: Pick) -> None:
         if self._pick is not None:
-            raise ValueError('already picked')
+            raise ValueError("already picked")
         self._pick = pick
 
     @property
@@ -354,8 +317,4 @@ class PickPoint(object):
         )
 
     def __repr__(self):
-        return '{}({}, {})'.format(
-            self.__class__.__name__,
-            self._draft_id,
-            self._global_pick_number,
-        )
+        return "{}({}, {})".format(self.__class__.__name__, self._draft_id, self._global_pick_number)

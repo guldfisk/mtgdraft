@@ -9,22 +9,24 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 
 import websocket
-
-from ring import Ring
-
-from mtgorp.db.database import CardDatabase
-from mtgorp.models.serilization.strategies.raw import RawStrategy
-
+from cubeclient.models import ApiClient, PoolSpecification, User
 from magiccube.collections.cube import Cube
 from magiccube.collections.infinites import Infinites
+from mtgorp.db.database import CardDatabase
+from mtgorp.models.serilization.strategies.raw import RawStrategy
+from ring import Ring
 
-from cubeclient.models import User, ApiClient, PoolSpecification
-
-from mtgdraft.models import DraftBooster, DraftRound, DraftConfiguration, draft_format_map, PickPoint, DraftFormat
+from mtgdraft.models import (
+    DraftBooster,
+    DraftConfiguration,
+    DraftFormat,
+    DraftRound,
+    PickPoint,
+    draft_format_map,
+)
 
 
 class PickHistory(t.Sequence[PickPoint]):
-
     def __init__(self):
         self._lock = threading.Lock()
         self._picks: t.MutableSequence[PickPoint] = []
@@ -67,7 +69,6 @@ class PickHistory(t.Sequence[PickPoint]):
 
 
 class BoosterTracker(t.MutableMapping[User, int]):
-
     def __init__(self, users: t.Iterable[User]):
         self._user_map = {user: 0 for user in users}
         self._lock = threading.Lock()
@@ -77,7 +78,7 @@ class BoosterTracker(t.MutableMapping[User, int]):
             self._user_map[k] = v
 
     def __delitem__(self, v: User) -> None:
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def __getitem__(self, k: User) -> int:
         with self._lock:
@@ -94,11 +95,11 @@ class BoosterTracker(t.MutableMapping[User, int]):
 
 
 class DraftClient(ABC):
-
     def __init__(
         self,
         api_client: ApiClient,
-        draft_id: str, db: CardDatabase,
+        draft_id: str,
+        db: CardDatabase,
         *,
         verify_ssl: bool = True,
     ):
@@ -127,21 +128,21 @@ class DraftClient(ABC):
         self._lock = threading.Lock()
 
         self._ws = websocket.WebSocketApp(
-            '{}://{}/ws/draft/{}/'.format(
-                'wss' if self._api_client.scheme == 'https' else 'ws',
+            "{}://{}/ws/draft/{}/".format(
+                "wss" if self._api_client.scheme == "https" else "ws",
                 self._api_client.host,
                 self._draft_id,
             ),
-            on_message = self.on_message,
-            on_error = self.on_error,
-            on_close = self.on_close,
+            on_message=self.on_message,
+            on_error=self.on_error,
+            on_close=self.on_close,
         )
         self._ws.on_open = self.on_open
 
         self._ws_thread = threading.Thread(
-            target = self._ws.run_forever,
-            daemon = True,
-            kwargs = None if verify_ssl else {'sslopt': {'cert_reqs': ssl.CERT_NONE}},
+            target=self._ws.run_forever,
+            daemon=True,
+            kwargs=None if verify_ssl else {"sslopt": {"cert_reqs": ssl.CERT_NONE}},
         )
         self._ws_thread.start()
 
@@ -213,30 +214,28 @@ class DraftClient(ABC):
         raise error
 
     def on_error(self, error):
-        logging.error(f'socket_error: {error}')
+        logging.error(f"socket_error: {error}")
 
     def on_close(self):
-        logging.info('socket closed')
+        logging.info("socket closed")
 
     def on_open(self) -> None:
         pass
 
     def on_message(self, message) -> None:
         try:
-            self._handle_message(
-                json.loads(message)
-            )
+            self._handle_message(json.loads(message))
         except Exception as e:
             self._on_message_error(e)
 
     def _handle_message(self, message: t.Mapping[str, t.Any]) -> None:
-        logging.info(f'received {message}')
-        message_type = message['type']
+        logging.info(f"received {message}")
+        message_type = message["type"]
 
-        if message_type == 'booster':
+        if message_type == "booster":
             booster = RawStrategy(self._db).deserialize(
                 DraftBooster,
-                message['booster'],
+                message["booster"],
             )
 
             self._pick_counter += 1
@@ -252,16 +251,16 @@ class DraftClient(ABC):
 
             self._history.add_pick(pick_point)
 
-            self._received_booster(pick_point, message['timeout'], message['began_at'])
+            self._received_booster(pick_point, message["timeout"], message["began_at"])
 
-        elif message_type == 'booster_amount_update':
-            self._booster_tracker[self._user_map[message['drafter']]] = message['queue_size']
+        elif message_type == "booster_amount_update":
+            self._booster_tracker[self._user_map[message["drafter"]]] = message["queue_size"]
             self._on_boosters_changed(self._booster_tracker)
 
-        elif message_type == 'pick':
+        elif message_type == "pick":
             pick = RawStrategy(self._db).deserialize(
                 self._draft_configuration.draft_format.pick_type,
-                message['pick'],
+                message["pick"],
             )
             with self._lock:
                 self._pool += Cube(pick.added_cubeables)
@@ -269,43 +268,43 @@ class DraftClient(ABC):
             pick_point.set_pick(pick)
             self._picked(pick_point)
 
-        elif message_type == 'round':
+        elif message_type == "round":
             self._round = DraftRound(
-                booster_specification = self._draft_configuration.booster_specification_at(message['round']['pack']),
-                **message['round'],
+                booster_specification=self._draft_configuration.booster_specification_at(message["round"]["pack"]),
+                **message["round"],
             )
             self._pick_counter = 0
             self._on_round(self._round)
 
-        elif message_type == 'started':
-            draft_format_type = draft_format_map[message['draft_format']]
+        elif message_type == "started":
+            draft_format_type = draft_format_map[message["draft_format"]]
             self._draft_configuration = DraftConfiguration(
-                drafters = Ring(
+                drafters=Ring(
                     User.deserialize(
                         user,
                         self._api_client,
-                    ) for user in
-                    message['drafters']
+                    )
+                    for user in message["drafters"]
                 ),
-                draft_format = draft_format_type,
-                pool_specification = PoolSpecification.deserialize(message['pool_specification'], self._api_client),
-                infinites = RawStrategy(self._db).deserialize(Infinites, message['infinites']),
-                reverse = message['reverse'],
+                draft_format=draft_format_type,
+                pool_specification=PoolSpecification.deserialize(message["pool_specification"], self._api_client),
+                infinites=RawStrategy(self._db).deserialize(Infinites, message["infinites"]),
+                reverse=message["reverse"],
             )
             self._draft_format = draft_format_type(self)
             self._user_map = {u.id: u for u in self._draft_configuration.drafters.all}
             self._booster_tracker = BoosterTracker(self._draft_configuration.drafters.all)
             self._on_start(self._draft_configuration)
 
-        elif message_type == 'completed':
-            self._pool_id = message['pool_id']
-            self._session_name = message['session_name']
+        elif message_type == "completed":
+            self._pool_id = message["pool_id"]
+            self._session_name = message["session_name"]
             self._completed(self._pool_id, self._session_name)
             self._ws.close()
 
-        elif message_type == 'previous_messages':
-            for sub_message in message['messages']:
+        elif message_type == "previous_messages":
+            for sub_message in message["messages"]:
                 self._handle_message(sub_message)
 
         else:
-            logging.warning(f'unknown message type {message_type}')
+            logging.warning(f"unknown message type {message_type}")
