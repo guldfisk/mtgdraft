@@ -213,16 +213,16 @@ class DraftClient(ABC):
     def _on_message_error(self, error: Exception) -> None:
         raise error
 
-    def on_error(self, error):
+    def on_error(self, app, error, *args, **kwargs):
         logging.error(f"socket_error: {error}")
 
-    def on_close(self):
+    def on_close(self, app, *args, **kwargs):
         logging.info("socket closed")
 
-    def on_open(self) -> None:
+    def on_open(self, app, *args, **kwargs) -> None:
         pass
 
-    def on_message(self, message) -> None:
+    def on_message(self, app, message, *args, **kwargs) -> None:
         try:
             self._handle_message(json.loads(message))
         except Exception as e:
