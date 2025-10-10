@@ -106,6 +106,36 @@ class SinglePickPick(Pick):
         return "{}({})".format(self.__class__.__name__, self._cubeable)
 
 
+class DoublePickPick(Pick):
+    def __init__(self, picks: tuple[Cubeable, Cubeable]):
+        self._picks = picks
+
+    @property
+    def picked(self) -> t.Iterable[Cubeable]:
+        return self._picks
+
+    @property
+    def main_picked(self) -> Cubeable:
+        return self._picks[0]
+
+    @property
+    def added_cubeables(self) -> t.Iterable[Cubeable]:
+        return self._picks
+
+    def _serialize(self) -> t.Mapping[str, t.Any]:
+        return {"picks": [serialize_cubeable(c) for c in self._picks]}
+
+    @classmethod
+    def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
+        return cls(tuple(deserialize_cubeable(c, inflator) for c in value["picks"]))
+
+    def __hash__(self) -> int:
+        return hash(self._picks)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, self.__class__) and self._picks == other._picks
+
+
 class BurnPick(Pick):
     def __init__(self, pick: Cubeable, burn: t.Optional[Cubeable]):
         self._pick = pick
@@ -182,9 +212,14 @@ class Burn(DraftFormat[BurnPick]):
     pick_type = BurnPick
 
 
+class DoublePick(DraftFormat[DoublePickPick]):
+    pick_type = DoublePickPick
+
+
 draft_format_map = {
     "single_pick": SinglePick,
     "burn": Burn,
+    "double_pick": DoublePick,
 }
 
 
