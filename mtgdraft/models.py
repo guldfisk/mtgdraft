@@ -107,33 +107,47 @@ class SinglePickPick(Pick):
 
 
 class DoublePickPick(Pick):
-    def __init__(self, picks: tuple[Cubeable, Cubeable]):
-        self._picks = picks
+    def __init__(self, first_pick: Cubeable, second_pick: t.Optional[Cubeable]):
+        self._first_pick = first_pick
+        self._second_pick = second_pick
 
     @property
     def picked(self) -> t.Iterable[Cubeable]:
-        return self._picks
+        return self._first_pick, self._second_pick
 
     @property
     def main_picked(self) -> Cubeable:
-        return self._picks[0]
+        return self._first_pick
 
     @property
     def added_cubeables(self) -> t.Iterable[Cubeable]:
-        return self._picks
+        return self._first_pick, self._second_pick
 
     def _serialize(self) -> t.Mapping[str, t.Any]:
-        return {"picks": [serialize_cubeable(c) for c in self._picks]}
+        return {
+            "first_pick": serialize_cubeable(self._first_pick),
+            "second_pick": None if self._second_pick is None else serialize_cubeable(self._second_pick),
+        }
 
     @classmethod
     def deserialize(cls, value: serialization_model, inflator: Inflator) -> Serializeable:
-        return cls(tuple(deserialize_cubeable(c, inflator) for c in value["picks"]))
+        return cls(
+            deserialize_cubeable(value["first_pick"], inflator),
+            None if value["second_pick"] is None else deserialize_cubeable(value["second_pick"], inflator),
+        )
 
     def __hash__(self) -> int:
-        return hash(self._picks)
+        return hash((self._first_pick, self._second_pick))
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, self.__class__) and self._picks == other._picks
+        return (
+            isinstance(other, self.__class__)
+            and self._first_pick == other._first_pick
+            and self._second_pick == other._second_pick
+        )
+
+    def __repr__(self) -> str:
+        return "{}({}, {})".format(self.__class__.__name__, self._first_pick, self._second_pick)
 
 
 class BurnPick(Pick):
